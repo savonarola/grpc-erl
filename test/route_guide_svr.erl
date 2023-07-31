@@ -58,16 +58,5 @@ record_route(Stream, _Md) ->
 route_chat(Stream, _Md) ->
     grpc_stream:reply(Stream, [#{name => "City1", location => #{latitude => 1, longitude => 1}}]),
     grpc_stream:reply(Stream, [#{name => "City2", location => #{latitude => 2, longitude => 2}}]),
-    LoopRecv = fun _Lp(St) ->
-        case grpc_stream:recv(St) of
-            {more, Reqs, NSt} ->
-                ?LOG("~p: ~0p~n", [?FUNCTION_NAME, Reqs]),
-                _Lp(NSt);
-            {eos, Reqs, NSt} ->
-                ?LOG("~p: ~0p~n", [?FUNCTION_NAME, Reqs]),
-                NSt
-        end
-    end,
-    NStream = LoopRecv(Stream),
-    grpc_stream:reply(NStream, [#{name => "City3", location => #{latitude => 3, longitude => 3}}]),
-    {ok, NStream}.
+    grpc_stream:reply(Stream, [#{name => "City3", location => #{latitude => 3, longitude => 3}}]),
+    {ok, Stream}.

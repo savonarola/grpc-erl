@@ -35,7 +35,7 @@ all() ->
     [{group, http}, {group, https}].
 
 groups() ->
-    Tests = [t_say_hello, t_get_feature, t_list_features, t_record_route],
+    Tests = [t_say_hello, t_get_feature, t_list_features, t_record_route, t_record_chat],
     [{http, Tests}, {https,Tests}].
 
 init_per_group(GrpName, Cfg) ->
@@ -94,18 +94,10 @@ t_get_feature(_) ->
 t_list_features(_) ->
     {ok, Stream} = routeguide_route_guide_client:list_features(#{}, #{channel => ?CHANN_NAME}),
     grpc_client:send(Stream, #{}, fin),
-    LoopRecv = fun _Lp(Acc) ->
-                       {ok, Fs} = grpc_client:recv(Stream),
-                       case Acc ++ Fs of
-                           NAcc when length(NAcc) == 4 -> NAcc;
-                           NAcc ->
-                               _Lp(NAcc)
-                       end
-               end,
     ?assertMatch([#{name := <<"City1">>},
                   #{name := <<"City2">>},
                   #{name := <<"City3">>},
-                  {eos,[{<<"grpc-status">>,<<"0">>}]}], LoopRecv([])).
+                  {eos,[{<<"grpc-status">>,<<"0">>}]}], recv_n(Stream, 4)).
 
 t_record_route(_) ->
     {ok, Stream} = routeguide_route_guide_client:record_route(#{}, #{channel => ?CHANN_NAME}),
@@ -113,13 +105,31 @@ t_record_route(_) ->
     grpc_client:send(Stream, #{latitude => 2, longitude => 2}),
     timer:sleep(100),
     grpc_client:send(Stream, #{latitude => 3, longitude => 3}, fin),
-    LoopRecv = fun _Lp(Acc) ->
-                       {ok, Fs} = grpc_client:recv(Stream),
-                       case Acc ++ Fs of
-                           NAcc when length(NAcc) == 2 -> NAcc;
-                           NAcc ->
-                               _Lp(NAcc)
-                       end
-               end,
     ?assertMatch([#{point_count := 3},
-                  {eos,[{<<"grpc-status">>,<<"0">>}]}], LoopRecv([])).
+                  {eos,[{<<"grpc-status">>,<<"0">>}]}], recv_n(Stream, 2)).
+
+t_record_chat(_) ->
+    {ok, Stream} = routeguide_route_guide_client:route_chat(#{}, #{channel => ?CHANN_NAME}),
+    timer:sleep(100),
+    ?assertMatch(
+        [
+            #{name := <<"City1">>},
+            #{name := <<"City2">>},
+            #{name := <<"City3">>},
+            {eos, [{<<"grpc-status">>, <<"0">>}]}
+        ],
+        recv_n(Stream, 4)
+    ).
+
+%%--------------------------------------------------------------------
+%% Helper functions
+%%--------------------------------------------------------------------
+
+recv_n(Stream, N) ->
+    recv_n(Stream, N, []).
+
+recv_n(_Stream, 0, Acc) ->
+    Acc;
+recv_n(Stream, N, Acc) ->
+    {ok, Fs} = grpc_client:recv(Stream),
+    recv_n(Stream, N - length(Fs), Acc ++ Fs).
