@@ -471,11 +471,15 @@ handle_stream_handle_result({ok, Stream}, StreamRef, Streams, State) ->
 handle_stream_handle_result({ok, Events, Stream}, StreamRef, Streams, State) ->
     _ = run_events(Events),
     {noreply, State#state{streams = Streams#{StreamRef => Stream}}};
-handle_stream_handle_result({shutdown, _Reason, _Stream}, StreamRef, Streams, State) ->
-    _Reason /= normal andalso
-        ?LOG(error, "[gRPC Client] Stream shutdown reason: ~p, stream: ~s",
-             [_Reason, format_stream(_Stream)]),
+% shutdown on gun error
+handle_stream_handle_result({shutdown, Reason, Stream}, StreamRef, Streams, State)
+    when Reason =:= normal orelse Reason =:= {stream_error,no_error,'Stream reset by server.'} ->
+    ?LOG(debug, "[gRPC Client] Stream shutdown reason: ~p, stream: ~s", [Reason, format_stream(Stream)]),
     {noreply, State#state{streams = maps:remove(StreamRef, Streams)}};
+handle_stream_handle_result({shutdown, Reason, Stream}, StreamRef, Streams, State) ->
+    ?LOG(error, "[gRPC Client] Stream shutdown reason: ~p, stream: ~s", [Reason, format_stream(Stream)]),
+    {noreply, State#state{streams = maps:remove(StreamRef, Streams)}};
+% self-induced shutdown
 handle_stream_handle_result({shutdown, _Reason, Events, _Stream}, StreamRef, Streams, State) ->
     _Reason /= normal andalso
         ?LOG(error, "[gRPC Client] Stream shutdown reason: ~p, stream: ~s",
