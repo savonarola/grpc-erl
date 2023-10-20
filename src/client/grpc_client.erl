@@ -37,6 +37,7 @@
         , handle_call/3
         , handle_cast/2
         , handle_info/2
+        , handle_continue/2
         , terminate/2
         , code_change/3
         ]).
@@ -263,7 +264,16 @@ init([Pool, Id, Server = {_, _, _}, ClientOpts0]) ->
               server = Server,
               encoding = Encoding,
               streams = #{},
-              client_opts = Opts})}.
+              client_opts = Opts}), {continue, connect}}.
+
+handle_continue(connect, State) ->
+    case do_connect(State) of
+        {error, Reason} ->
+            logger:error("[grpc_client] connect to ~p failed: ~p", [State#state.server, Reason]),
+            {noreply, State};
+        NState ->
+            {noreply, NState}
+    end.
 
 handle_call(Req, From, State = #state{gun_pid = undefined}) ->
     case do_connect(State) of
