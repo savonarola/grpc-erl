@@ -39,6 +39,7 @@ groups() ->
     [{http, Tests}, {https,Tests}].
 
 init_per_group(GrpName, Cfg) ->
+    _ = application:ensure_all_started(grpc),
     DataDir = proplists:get_value(data_dir, Cfg),
     TestDir = re:replace(DataDir, "/grpc_SUITE_data", "", [{return, list}]),
     CA = filename:join([TestDir, "certs", "ca.pem"]),
@@ -74,7 +75,8 @@ init_per_group(GrpName, Cfg) ->
 
 end_per_group(_GrpName, _Cfg) ->
     _ = grpc_client_sup:stop_channel_pool(?CHANN_NAME),
-    _ = grpc:stop_server(?SERVER_NAME).
+    _ = grpc:stop_server(?SERVER_NAME),
+    _ = application:stop(grpc).
 
 %%--------------------------------------------------------------------
 %% Tests

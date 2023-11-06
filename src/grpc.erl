@@ -53,8 +53,6 @@ start_server(Name, ListenOn, Services) ->
     -> {ok, pid()} | {error, term()}.
 %% @doc Start a gRPC server
 start_server(Name, ListenOn, Services, Options) ->
-    _ = application:ensure_all_started(grpc),
-
     Services1 = enable_default_services(
                   proplists:get_value(enable_default_services, Options, all),
                   Services),
