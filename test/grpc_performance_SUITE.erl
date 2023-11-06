@@ -36,6 +36,7 @@ all() ->
     [t_performance].
 
 init_per_suite(Cfg) ->
+    _ = application:ensure_all_started(grpc),
     Services = #{protos => [grpc_greeter_pb],
                  services => #{'Greeter' => greeter_svr}
                 },
@@ -45,7 +46,8 @@ init_per_suite(Cfg) ->
 
 end_per_suite(_Cfg) ->
     _ = grpc_client_sup:stop_channel_pool(?CHANN_NAME),
-    _ = grpc:stop_server(?SERVER_NAME).
+    _ = grpc:stop_server(?SERVER_NAME),
+    _ = application:stop(grpc).
 
 %%--------------------------------------------------------------------
 %% Test cases

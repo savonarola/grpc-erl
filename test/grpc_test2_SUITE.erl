@@ -35,6 +35,7 @@ all() ->
     [t_deadline].
 
 init_per_suite(Cfg) ->
+    _ = application:ensure_all_started(grpc),
     Services = #{protos => [grpc_test_pb],
                  services => #{'Test' => test_svr}
                 },
@@ -43,10 +44,10 @@ init_per_suite(Cfg) ->
     {ok, _} = grpc_client_sup:create_channel_pool(?CHANN_NAME, SvrAddr, #{}),
     Cfg.
 
-end_per_suite(Cfg) ->
+end_per_suite(_Cfg) ->
     _ = grpc_client_sup:stop_channel_pool(?CHANN_NAME),
     _ = grpc:stop_server(?SERVER_NAME),
-    Cfg.
+    _ = application:stop(grpc).
 
 %%--------------------------------------------------------------------
 %% Tests
