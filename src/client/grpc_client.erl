@@ -91,6 +91,10 @@
          %%
          %% Default equal to timeout option
          , connect_timeout => non_neg_integer()
+         %% Whether to exit the client process
+         %% when the connection process exits
+         %% Default is true, as in gen.erl and gen_server.erl
+         , exit_on_connection_crash => boolean()
          }.
 
 -type def() ::
@@ -162,13 +166,12 @@ start_link(Pool, Id, Server, Opts) when is_map(Opts)  ->
      | {error, term()}.
 %% @doc Unary function call
 unary(Def, Req, Metadata, Options) ->
-    Timeout = maps:get(timeout, Options, infinity),
     case open(Def, Metadata, Options) of
         {ok, GStream} ->
-            _ = send(GStream, Req, fin),
-            case recv(GStream, Timeout) of
+            _ = send(GStream, Req, fin, Options),
+            case recv(GStream, Options) of
                 {ok, [Resp]} when is_map(Resp) ->
-                    {ok, [{eos, Trailers}]} = recv(GStream, Timeout),
+                    {ok, [{eos, Trailers}]} = recv(GStream, Options),
                     {ok, Resp, Trailers};
                 {ok, [{eos, Trailers}]} ->
                     %% Not data responed, only error trailers
@@ -189,7 +192,8 @@ open(Def, Metadata, Options) ->
                   maps:get(channel, Options, undefined),
                   maps:get(key_dispatch, Options, self())
                  ),
-    case call(ClientPid, {open, Def, Metadata, Options}, connect_timeout(Options)) of
+    ConnectTimeout = connect_timeout(Options),
+    case call(ClientPid, {open, Def, Metadata, Options}, Options#{timeout => ConnectTimeout}) of
         {ok, StreamRef} ->
             {ok, #{stream_ref => StreamRef, client_pid => ClientPid, def => Def}};
         {error, _} = Error -> Error
@@ -199,21 +203,32 @@ connect_timeout(Options) ->
     maps:get(
       connect_timeout,
       Options,
-      maps:get(timeout, Options, infinity)
+      timeout(Options)
      ).
+
+timeout(Options) ->
+    maps:get(timeout, Options, infinity).
+
+exit_on_connection_crash(Options) ->
+    maps:get(exit_on_connection_crash, Options, true).
 
 -spec send(grpcstream(), request()) -> ok.
 send(GStream, Req) ->
     send(GStream, Req, nofin).
 
+-spec send(grpcstream(), request(), fin | nofin) -> ok | no_return().
+send(GStream, Req, IsFin) ->
+    send(GStream, Req, IsFin, #{}).
+
+-spec send(grpcstream(), request(), fin | nofin, options()) -> ok.
 send(_GStream = #{
              def        := Def,
              client_pid := ClientPid,
              stream_ref := StreamRef
-          }, Req, IsFin) ->
+          }, Req, IsFin, Options) ->
     #{marshal := Marshal} = Def,
     Bytes = Marshal(Req),
-    case call(ClientPid, {send, StreamRef, Bytes, IsFin}, infinity) of
+    case call(ClientPid, {send, StreamRef, Bytes, IsFin}, Options) of
         ok -> ok;
         {error, R} -> error(R)
     end.
@@ -222,20 +237,23 @@ send(_GStream = #{
     -> {ok, [response() | eos_msg()]}
      | {error, term()}.
 recv(GStream) ->
-    recv(GStream, infinity).
+    recv(GStream, #{}).
 
--spec recv(grpcstream(), timeout())
+-spec recv(grpcstream(), timeout() | options())
     -> {ok, [response() | eos_msg()]}
-     | {error, term()}.
+     | {error, term()} | no_return().
+recv(GStream, Timeout) when is_integer(Timeout) ->
+    recv(GStream, #{timeout => Timeout});
 recv(#{def        := Def,
        client_pid := ClientPid,
-       stream_ref := StreamRef}, Timeout) ->
+       stream_ref := StreamRef}, Options) ->
+    Timeout = timeout(Options),
     Unmarshal = maps:get(unmarshal, Def),
     Endts = case Timeout of
                 infinity -> infinity;
                 _ -> erlang:system_time(millisecond) + Timeout
             end,
-    case call(ClientPid, {read, StreamRef, Endts}, Timeout) of
+    case call(ClientPid, {read, StreamRef, Endts}, Options) of
         {error, _} = E -> E;
         {IsMore, Frames} ->
             Msgs = lists:map(fun({eos, Trailers}) -> {eos, Trailers};
@@ -747,26 +765,37 @@ format_stream(#{st := St, recvbuff := Buff, mqueue := MQueue}) ->
                   [St, byte_size(Buff), MQueue]).
 
 %% copied from gen.erl and gen_server.erl
-call(Process, Request, Timeout) ->
-    Mref = erlang:monitor(process, Process),
+call(Process, Request, Options) ->
+    Timeout = timeout(Options),
+    ExitOnCrash = exit_on_connection_crash(Options),
+    Mref = erlang:monitor(process, Process, [{alias, reply_demonitor}]),
 
     %% OTP-21:
     %% Auto-connect is asynchronous. But we still use 'noconnect' to make sure
     %% we send on the monitored connection, and not trigger a new auto-connect.
     %%
-    erlang:send(Process, {'$gen_call', {self(), Mref}, Request}, [noconnect]),
+    erlang:send(Process, {'$gen_call', {Mref, Mref}, Request}, [noconnect]),
 
     receive
         {Mref, Reply} ->
             erlang:demonitor(Mref, [flush]),
             Reply;
         {'DOWN', Mref, _, _, Reason} ->
-            exit(Reason)
+            call_result(ExitOnCrash, Reason)
     after Timeout ->
               erlang:demonitor(Mref, [flush]),
-              {error, {grpc_utils:codename(?GRPC_STATUS_DEADLINE_EXCEEDED),
-                       <<"Waiting for response timeout">>}}
+              receive
+                {Mref, Reply} -> Reply
+              after 0 ->
+                {error, {grpc_utils:codename(?GRPC_STATUS_DEADLINE_EXCEEDED),
+                        <<"Waiting for response timeout">>}}
+              end
     end.
+
+call_result(_ExitOnCrash = true, Reason) ->
+    exit(Reason);
+call_result(_ExitOnCrash = false, Reason) ->
+    error({exit, Reason}).
 
 pick(ChannName, Key) ->
     gproc_pool:pick_worker(ChannName, Key).

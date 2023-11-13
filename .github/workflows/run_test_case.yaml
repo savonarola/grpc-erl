@@ -9,22 +9,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - uses: ilammy/msvc-dev-cmd@v1
-    - uses: gleam-lang/setup-erlang@v1.1.0
-      id: install_erlang
+    - uses: erlef/setup-beam@v1
       with:
-        otp-version: 22.3
-    - name: Run tests
-      run: |
-        $env:PATH = "${{ steps.install_erlang.outputs.erlpath }}\bin;$env:PATH"
-
-        $rebar3 = $env:USERPROFILE + "\rebar3"
-        (New-Object System.Net.WebClient).DownloadFile('https://github.com/emqx/rebar3/releases/download/3.14.3-emqx-4/rebar3', $rebar3)
-
-        escript $rebar3 xref
-        escript $rebar3 dialyzer
-        escript $rebar3 eunit
-        escript $rebar3 ct
+        otp-version: '24'
+        rebar3-version: '3.16.1'
+    - run: rebar3 xref
+    - run: rebar3 dialyzer
+    - run: rebar3 eunit
+    - run: rebar3 ct
 
   linux:
     runs-on: ubuntu-latest
@@ -32,24 +24,20 @@ jobs:
     strategy:
       matrix:
         os:
+          - ubuntu20.04
           - ubuntu18.04
           - ubuntu16.04
-          - ubuntu14.04
           - debian10
           - debian9
-          - debian8
-          - opensuse
+          - centos8
           - centos7
-          - centos6
           - raspbian10
-          - raspbian9
-          - raspbian8
 
     steps:
     - uses: actions/checkout@v1
     - name: Code analyze
       env:
-        ERL_OTP: erl22.1
+        ERL_OTP: erl24.3.4.2-1
         SYSTEM: ${{ matrix.os }}
       run: |
         version=$(echo ${{ github.ref }} | sed -r  "s .*/.*/(.*) \1 g")
@@ -57,7 +45,7 @@ jobs:
         sudo docker run --rm -i --name $SYSTEM -v $(pwd):/repos emqx/build-env:$ERL_OTP-$SYSTEM sh -c "cd /repos && make xref && make dialyzer"
     - name: Run tests
       env:
-        ERL_OTP: erl22.1
+        ERL_OTP: erl24.3.4.2-1
         SYSTEM: ${{ matrix.os }}
       run: |
         version=$(echo ${{ github.ref }} | sed -r  "s .*/.*/(.*) \1 g")
@@ -71,9 +59,10 @@ jobs:
     - uses: actions/checkout@v1
     - name: Code analyze
       env:
-        ERL_OTP: erl22.1
-      run: docker run --rm -i --name alpine -v $(pwd):/repos emqx/build-env:$ERL_OTP-alpine3.10-amd64 sh -c "cd /repos && make xref && make dialyzer"
+        ERL_OTP: erl24.3.4.2-1
+      run: docker run --rm -i --name alpine -v $(pwd):/repos emqx/build-env:$ERL_OTP-alpine sh -c "cd /repos && make xref && make dialyzer"
     - name: Run tests
       env:
-        ERL_OTP: erl22.1
-      run: docker run --rm -i --name alpine -v $(pwd):/repos emqx/build-env:$ERL_OTP-alpine3.10-amd64 sh -c "cd /repos && make eunit && make ct"
+        ERL_OTP: erl24.3.4.2-1
+      run: docker run --rm -i --name alpine -v $(pwd):/repos emqx/build-env:$ERL_OTP-alpine sh -c "cd /repos && make eunit && make ct"
+
