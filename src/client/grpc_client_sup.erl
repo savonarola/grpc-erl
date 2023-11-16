@@ -52,7 +52,7 @@ create_channel_pool(Name, URL, Opts) ->
         {error, Reason, _} -> {error, Reason}
     end.
 
--spec stop_channel_pool(term()) -> ok.
+-spec stop_channel_pool(term()) -> ok | {error, term()}.
 stop_channel_pool(Name) ->
     case supervisor:terminate_child(?APP_SUP, Name) of
         ok ->
