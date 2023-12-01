@@ -282,7 +282,7 @@ init([Pool, Id, Server = {_, _, _}, ClientOpts0]) ->
               server = Server,
               encoding = Encoding,
               streams = #{},
-              client_opts = Opts}), {continue, connect}}.
+              client_opts = Opts})}.
 
 handle_continue(connect, State) ->
     case do_connect(State) of
