@@ -401,6 +401,7 @@ handle_info({gun_down, GunPid, http2, Reason, KilledStreamRefs, _},
 
 handle_info({'DOWN', MRef, process, GunPid, Reason},
             State = #state{mref = MRef, gun_pid = GunPid, streams = Streams}) ->
+    ct:print("handle_info[~p]: ~p~n", [self(), {'DOWN', MRef, process, GunPid, Reason}]),
     Nowts = erlang:system_time(millisecond),
     _ = maps:fold(fun(_, #{hangs := Hangs}, _Acc) ->
         lists:foreach(fun({From, Endts}) ->
@@ -631,8 +632,10 @@ clean_hangs(Stream = #{hangs := Hangs}) ->
 
 do_connect(State = #state{server = {_, Host, Port}, client_opts = ClientOpts}) ->
     GunOpts = maps:get(gun_opts, ClientOpts, #{}),
+    ct:print("do_connect[~p]: ~p:~p ~p~n", [self(), Host, Port, GunOpts]),
     case gun:open(Host, Port, GunOpts) of
         {ok, Pid} ->
+            ct:print("do_connect[~p]: ok", [self()]),
             case gun_await_up_helper(Pid) of
                 {ok, _Protocol} ->
                     MRef = monitor(process, Pid),
@@ -642,6 +645,7 @@ do_connect(State = #state{server = {_, Host, Port}, client_opts = ClientOpts}) -
                     {error, Reason}
             end;
         {error, Reason} ->
+            ct:print("do_connect[~p]: error: ~p", [self(), Reason]),
             {error, Reason}
     end.
 
